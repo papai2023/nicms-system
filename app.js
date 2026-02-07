@@ -133,43 +133,44 @@ const DB = {
             } catch (e) {
                 // Fallback: reinitialize if corrupted
                 const initialized = USERS.map(u => {
-                    const salt = `nicms:${u.username}`;
+                    const salt = 'nicms:${u.username}';
                     const initialPassword = u.username;
                     const passwordHash = simpleHash(salt + initialPassword);
                     return { ...u, passwordSalt: salt, passwordHash, nameLocked: false };
                 });
                 localStorage.setItem('nicms_users', JSON.stringify(initialized));
             }
+        
+            // Cleanup old officer training submissions (TTL: 5 days)
+            try {
+                const submissionsStr = localStorage.getItem('nicms_training_submissions');
+                if (submissionsStr) {
+                    const now = Date.now();
+                    const ttlMs = 5 * 24 * 60 * 60 * 1000;
+                    const submissions = JSON.parse(submissionsStr);
+                    const filtered = submissions.filter(s => {
+                        const t = new Date(s.date).getTime();
+                        return isFinite(t) && (now - t) < ttlMs;
+                    });
+                    if (filtered.length !== submissions.length) {
+                        localStorage.setItem('nicms_training_submissions', JSON.stringify(filtered));
+                    }
+                }
+            } catch (error) {
+                console.warn("Could not clean up submissions:", error);
+            }
+        })(); // This correctly closes the syncData function
+        
+        async function initializeSharedData() {
+            try {
+                const materials = await DB.getMaterials();
+                const logs = await DB.getLogs();
+                console.log("Shared data synchronized from MongoDB Atlas");
+            } catch (err) {
+                console.error("Sync failed:", err);
+            }
         }
-        // Cleanup old officer training submissions (TTL: 5 days)
-        try {
-            const submissionsStr = localStorage.getItem('nicms_training_submissions');
-            if (submissionsStr) {
-                const now = Date.now();
-                const ttlMs = 5 * 24 * 60 * 60 * 1000;
-                const submissions = JSON.parse(submissionsStr);
-                const filtered = submissions.filter(s => {
-                    const t = new Date(s.date).getTime();
-                    return isFinite(t) && (now - t) < ttlMs;
-                }};
-                if (filtered.length !== submissions.length) {
-                    localStorage.setItem('nicms_training_submissions', JSON.stringify(filtered));
-        } catch (error) {
-            console.warn("could not clean up submissions:", error);
-        }
-     } //<---THIS CLOSES syncData()
-     //  // Automatically load shared data when any officer logs in
-async function initializeSharedData() {
-    try {
-        const materials = await DB.getMaterials();
-        const logs = await DB.getLogs();
-        console.log("Shared data synchronized from MongoDB Atlas");
-        // Trigger your render functions here if needed
-    } catch (err) {
-        console.error("Sync failed:", err);
-    }
-}
-initializeSharedData();
+        initializeSharedData();
     updateUser: (updatedUser) => {
         const users = DB.getUsers();
         const idx = users.findIndex(u => u.username === updatedUser.username);
@@ -181,38 +182,33 @@ initializeSharedData();
             } catch (_) {}
         }
     },
-    getCases: () => JSON.parse(localStorage.getItem('nicms_cases')),
-    saveCase: (newCase) => {
-        const cases = DB.getCases();
-        const existingIndex = cases.findIndex(c => c.id === newCase.id);
-        if (existingIndex >= 0) {
-            cases[existingIndex] = newCase;
-        } else {
-            cases.push(newCase);
+    check; () => {
+        const user = sessionStorage.getItem('nicms_user');
+        return user ? JSON.parse(user) : null;
+    }, // Line 189: This comma is essential
+
+    login; async (username, password) => {
+        const usersStr = localStorage.getItem('nicms_users');
+        const users = JSON.parse(usersStr || '[]');
+        const user = users.find(u => u.username === username.toLowerCase());
+
+        if (!user) throw new Error('User not found');
+        
+        // Line 199: Must use backticks (`) here
+        const salt = user.passwordSalt || 'nicms:${user.username}';
+        const hash = simpleHash(salt + password);
+        
+        if (hash !== user.passwordHash) {
+            throw new Error('Invalid password');
         }
-        localStorage.setItem('nicms_cases', JSON.stringify(cases));
-        try {
-            const url = existingIndex >= 0 ? (API_BASE + '/cases/' + encodeURIComponent(newCase.id)) : (API_BASE + '/cases');
-            const method = existingIndex >= 0 ? 'PUT' : 'POST';
-            fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCase) });
-        } catch (_) {}
-    },
-    getLogs: () => JSON.parse(localStorage.getItem('nicms_logs')),
-    addLog: (action, details) => {
-        const logs = DB.getLogs();
-        const user = Auth.getUser();
-        logs.unshift({
-            timestamp: new Date().toISOString(),
-            user: user ? user.username : 'system',
-            role: user ? user.role : 'system',
-            action,
-            details
-        });
+
+        sessionStorage.setItem('nicms_user', JSON.stringify(user));
+        return user;
+    }, // Line 210: This comma separates login from logout
         localStorage.setItem('nicms_logs', JSON.stringify(logs));
         try {
             fetch(API_BASE + '/logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logs[0]) });
         } catch (_) {}
-    },
     fetchUsers: async () => {
         try {
             const data = await apiFetch('/users');
@@ -222,7 +218,7 @@ initializeSharedData();
             return JSON.parse(localStorage.getItem('nicms_users') || '[]');
         }
     },
-    fetchCases: async () => {
+    fetchCases; async () => {
         try {
             const data = await apiFetch('/cases');
             localStorage.setItem('nicms_cases', JSON.stringify(data));
@@ -231,7 +227,7 @@ initializeSharedData();
             return JSON.parse(localStorage.getItem('nicms_cases') || '[]');
         }
     },
-    fetchLogs: async () => {
+    fetchLogs; async () => {
         try {
             const data = await apiFetch('/logs');
             localStorage.setItem('nicms_logs', JSON.stringify(data));
@@ -240,7 +236,7 @@ initializeSharedData();
             return JSON.parse(localStorage.getItem('nicms_logs') || '[]');
         }
     },
-    fetchTrainingMaterials: async () => {
+    fetchTrainingMaterials; async () => {
         try {
             const data = await apiFetch('/training/materials');
             localStorage.setItem('nicms_training_materials', JSON.stringify(data));
@@ -258,7 +254,6 @@ const toBase64 = file => new Promise((resolve, reject) => {
     reader.onload = () => resolve(reader.result);
     reader.onerror = error => reject(error);
 });
-
 // New version that saves to the Cloud instead of LocalStorage
 const saveTrainingMaterial = async (m) => {
     try {
@@ -290,7 +285,7 @@ const saveTrainingMaterial = async (m) => {
             return JSON.parse(localStorage.getItem('nicms_training_completions') || '[]');
         }
     },
-    saveTrainingCompletions: async (arrOrOne) => {
+    saveTrainingCompletions; async (arrOrOne) => {
         try {
             await apiFetch('/training/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arrOrOne) });
         } catch (_) {}
@@ -299,7 +294,7 @@ const saveTrainingMaterial = async (m) => {
         else completions.push(arrOrOne);
         localStorage.setItem('nicms_training_completions', JSON.stringify(completions));
     }
-};
+
 
 // --- Authentication ---
 const Auth = {
