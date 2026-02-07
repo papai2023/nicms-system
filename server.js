@@ -11,6 +11,23 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 const mongoURI = process.env.MONGODB_URI;
+// --- DATABASE MODELS ---
+const materialSchema = new mongoose.Schema({
+  id: String,
+  title: String,
+  type: String,
+  content: String,
+  timestamp: { type: Date, default: Date.now }
+});
+const Material = mongoose.model('Material', materialSchema);
+
+const logSchema = new mongoose.Schema({
+  action: String,
+  user: String,
+  details: String,
+  timestamp: { type: Date, default: Date.now }
+});
+const Log = mongoose.model('Log', logSchema);
 
 mongoose.connect(mongoURI)
     .then(() => console.log('✅ Connected to MongoDB Atlas!'))
@@ -99,39 +116,31 @@ app.put('/api/cases/:id', (req, res) => {
   cases[i] = { ...cases[i], ...req.body }
   res.json({ ok: true })
 })
-app.get('/api/logs', (req, res) => res.json(logs))
-app.post('/api/logs', (req, res) => {
-  const l = req.body
-  logs.unshift(l)
-  res.json({ ok: true })
-})
-app.get('/api/training/materials', (req, res) => res.json(trainingMaterials))
-app.post('/api/training/materials', (req, res) => {
-  const m = req.body
-  if (!m || !m.id) return res.status(400).json({ ok: false })
-  const i = trainingMaterials.findIndex(x => x.id === m.id)
-  if (i >= 0) trainingMaterials[i] = m
-  else trainingMaterials.unshift(m)
-  res.json({ ok: true })
-})
-app.get('/api/training/submissions', (req, res) => res.json(trainingSubmissions))
-app.post('/api/training/submissions', (req, res) => {
-  const s = req.body
-  if (!s || !s.id) return res.status(400).json({ ok: false })
-  trainingSubmissions.unshift(s)
-  res.json({ ok: true })
-})
-app.get('/api/training/completions', (req, res) => res.json(trainingCompletions))
-app.post('/api/training/completions', (req, res) => {
-  const body = req.body
-  if (Array.isArray(body)) {
-    body.forEach(c => trainingCompletions.push(c))
-    return res.json({ ok: true })
-  }
-  if (!body || !body.id) return res.status(400).json({ ok: false })
-  trainingCompletions.push(body)
-  res.json({ ok: true })
-})
+// --- UPDATED ROUTES USING MONGODB ---
+
+// Logs
+app.get('/api/logs', async (req, res) => {
+  const logs = await Log.find().sort({ timestamp: -1 });
+  res.json(logs);
+});
+
+app.post('/api/logs', async (req, res) => {
+  const newLog = new Log(req.body);
+  await newLog.save();
+  res.json({ ok: true });
+});
+
+// Training Materials
+app.get('/api/training/materials', async (req, res) => {
+  const materials = await Material.find().sort({ timestamp: -1 });
+  res.json(materials);
+});
+
+app.post('/api/training/materials', async (req, res) => {
+  const newMaterial = new Material(req.body);
+  await newMaterial.save();
+  res.json({ ok: true });
+});
 app.post('/api/sync', (req, res) => {
   const body = req.body || {}
   if (Array.isArray(body.users)) {
