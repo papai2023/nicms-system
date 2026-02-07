@@ -74,19 +74,6 @@ async function apiFetch(path, options = {}, retries = 3, backoffMs = 200) {
         throw e;
     }
 }
-let cachedUsers = [];
-(async () => {
-    try {
-        cachedUsers = await apiFetch('/users');
-    } catch (_) {
-        cachedUsers = USERS.map(u => {
-            const salt = `nicms:${u.username}`;
-            const initialPassword = u.username;
-            const passwordHash = simpleHash(salt + initialPassword);
-            return { ...u, passwordSalt: salt, passwordHash };
-        });
-    }
-})();
 // --- ---
 const DB = {
     // Fetches shared materials from MongoDB
@@ -99,24 +86,25 @@ const DB = {
     },
     // Sends Maxwell's upload to the shared cloud
     saveMaterial: async (material) => {
-        return await apiFetch('/api/training/materials', {
+        return await apiFetch('/api/materials', {
             method: 'POST',
             body: JSON.stringify(material)
-        };
-    }}; // This closes the saveMaterial function
+        });
+    }
+}; // This closes the DB object correctly
 
-// Now wrap the sync logic in a function so it's "safe"
-(async function syncData() { 
+(async function syncData() {
     try {
         const existingStr = localStorage.getItem('nicms_users');
-                const usernames = new Set(existing.map(u => u.username));
-                const additions = USERS.filter(u => !usernames.has(u.username)).map(u => {
-                    const salt = `nicms:${u.username}`;
-                    const initialPassword = u.username;
-                    const passwordHash = simpleHash(salt + initialPassword);
-                    return { ...u, passwordSalt: salt, passwordHash, nameLocked: false };
-                });
-                let merged = existing.concat(additions);
+        const existing = JSON.parse(existingStr || '[]');
+        const usernames = new Set(existing.map(u => u.username));
+        
+        const additions = USERS.filter(u => !usernames.has(u.username)).map(u => {
+            const salt = nicms:${u.username};
+            const initialPassword = u.username;
+            const passwordHash = simpleHash(salt + initialPassword);
+            return { ...u, passwordSalt: salt, passwordHash, nameLocked: false };
+        }); // Correctly closes the filter and map chain
                 // Apply policy updates: restrict referral action, enable extended referral view
                 const targetUsernames = new Set(['pascalia', 'maxwel', 'simon']);
                 merged = merged.map(u => {
@@ -163,15 +151,14 @@ const DB = {
                 const filtered = submissions.filter(s => {
                     const t = new Date(s.date).getTime();
                     return isFinite(t) && (now - t) < ttlMs;
-                });
+                }};
                 if (filtered.length !== submissions.length) {
                     localStorage.setItem('nicms_training_submissions', JSON.stringify(filtered));
-                }
-            }
         } catch (error) {
             console.warn("could not clean up submissions:", error);
         }
-           // Automatically load shared data when any officer logs in
+     } //<---THIS CLOSES syncData()
+     //  // Automatically load shared data when any officer logs in
 async function initializeSharedData() {
     try {
         const materials = await DB.getMaterials();
@@ -210,24 +197,20 @@ initializeSharedData();
             fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCase) });
         } catch (_) {}
     },
-    getLogs: async () => {
-        try {
-            return await apiFetch('/logs');
-        } catch (_) {
-            return [];
-        }
-    },
+    getLogs: () => JSON.parse(localStorage.getItem('nicms_logs')),
     addLog: (action, details) => {
+        const logs = DB.getLogs();
         const user = Auth.getUser();
-        const entry = {
+        logs.unshift({
             timestamp: new Date().toISOString(),
             user: user ? user.username : 'system',
             role: user ? user.role : 'system',
             action,
             details
-        };
+        });
+        localStorage.setItem('nicms_logs', JSON.stringify(logs));
         try {
-            fetch(API_BASE + '/logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) });
+            fetch(API_BASE + '/logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logs[0]) });
         } catch (_) {}
     },
     fetchUsers: async () => {
@@ -287,7 +270,7 @@ const saveTrainingMaterial = async (m) => {
             m.content = await toBase64(file); 
         }
 
-        await apiFetch('/training/materials', {
+        await apiFetch('/api/training/materials', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(m)
@@ -298,7 +281,6 @@ const saveTrainingMaterial = async (m) => {
         console.error("Failed to share material globally.");
     }
 };
-DB.getUsers = () => cachedUsers;
     fetchTrainingCompletions: async () => {
         try {
             const data = await apiFetch('/training/completions');
@@ -321,28 +303,25 @@ DB.getUsers = () => cachedUsers;
 
 // --- Authentication ---
 const Auth = {
-    login: async (username, password) => {
-        try {
-            const res = await apiFetch('/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            if (!res || !res.ok) return false;
-            sessionStorage.setItem('nicms_user', JSON.stringify(res.user));
-            DB.addLog('Login', `User ${res.user.username} logged in`);
+    login: (username, password) => {
+        const users = DB.getUsers();
+        const user = users.find(u => u.username === username);
+        if (user) {
+            const candidateHash = simpleHash((user.passwordSalt || `nicms:${user.username}`) + password);
+            if (candidateHash !== user.passwordHash) return false;
+            localStorage.setItem('nicms_user', JSON.stringify(user));
+            DB.addLog('Login', `User ${user.username} logged in`);
             return true;
-        } catch (_) {
-            return false;
         }
+        return false;
     },
     logout: () => {
         const u = Auth.getUser();
         if (u) DB.addLog('Logout', `User ${u.username} logged out`);
-        sessionStorage.removeItem('nicms_user');
+        localStorage.removeItem('nicms_user');
         window.location.href = 'index.html';
     },
-    getUser: () => JSON.parse(sessionStorage.getItem('nicms_user')),
+    getUser: () => JSON.parse(localStorage.getItem('nicms_user')),
     checkAuth: () => {
         const user = Auth.getUser();
         if (!user) {
@@ -377,7 +356,7 @@ const Auth = {
         
         fullUser.passwordHash = simpleHash(salt + newPassword);
         DB.updateUser(fullUser);
-        sessionStorage.setItem('nicms_user', JSON.stringify(fullUser));
+        localStorage.setItem('nicms_user', JSON.stringify(fullUser));
         DB.addLog('Password Changed', `Password updated for ${fullUser.username}`);
         return { ok: true };
     },
@@ -411,7 +390,7 @@ const Auth = {
         fullUser.nameLocked = true;
         
         DB.updateUser(fullUser);
-        sessionStorage.setItem('nicms_user', JSON.stringify(fullUser));
+        localStorage.setItem('nicms_user', JSON.stringify(fullUser));
         DB.addLog('Profile Updated', `Name changed to ${fullUser.name}`);
         return { ok: true };
     },
