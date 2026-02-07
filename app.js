@@ -321,14 +321,20 @@ DB.getUsers = () => cachedUsers;
 
 // --- Authentication ---
 const Auth = {
-    login: (username, password) => {
-        const user = cachedUsers.find(u => u.username === username);
-        if (!user) return false;
-        const candidateHash = simpleHash((user.passwordSalt || `nicms:${user.username}`) + password);
-        if (candidateHash !== user.passwordHash) return false;
-        sessionStorage.setItem('nicms_user', JSON.stringify(user));
-        DB.addLog('Login', `User ${user.username} logged in`);
-        return true;
+    login: async (username, password) => {
+        try {
+            const res = await apiFetch('/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            if (!res || !res.ok) return false;
+            sessionStorage.setItem('nicms_user', JSON.stringify(res.user));
+            DB.addLog('Login', `User ${res.user.username} logged in`);
+            return true;
+        } catch (_) {
+            return false;
+        }
     },
     logout: () => {
         const u = Auth.getUser();

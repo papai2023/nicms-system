@@ -41,12 +41,12 @@
             Auth.redirectBasedOnRole();
         }
 
-        document.getElementById('login-form').addEventListener('submit', (e) => {
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const user = document.getElementById('username').value;
             const pass = document.getElementById('password').value;
             
-            if (Auth.login(user, pass)) {
+            if (await Auth.login(user, pass)) {
                 Auth.redirectBasedOnRole();
             } else {
                 document.getElementById('login-error').style.display = 'block';
