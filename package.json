@@ -1,0 +1,19 @@
+{
+  "name": "nicms-system",
+  "version": "1.0.0",
+  "description": "This is a purely HTML/JS/CSS implementation of the NICMS system. It runs entirely in the browser and uses `localStorage` to simulate a database, making it offline-capable and easy to demonstrate.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "mongoose": "^9.1.6"
+  }
+}
