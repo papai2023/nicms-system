@@ -32,6 +32,14 @@ const Log = mongoose.model('Log', logSchema);
 mongoose.connect(mongoURI)
     .then(() => console.log('✅ Connected to MongoDB Atlas!'))
     .catch(err => console.error('❌ Database connection error:', err));
+function simpleHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
 const users = [
   { id: 1, username: 'admin', role: 'core_team', name: 'Dr. Admin', county: 'All' },
   { id: 2, username: 'jane.supervisor', role: 'supervisor', name: 'Sup. Jane', accessibleCounties: ['Nairobi'] },
@@ -64,6 +72,12 @@ const users = [
   { id: 29, username: 'charleane', role: 'supervisor', name: 'Charleane Isabella', county: 'All' },
   { id: 30, username: 'levi', role: 'supervisor', name: 'Levi Pala', county: 'All' }
 ]
+users.forEach(u => {
+  const salt = `nicms:${u.username}`;
+  const initialPassword = u.username;
+  u.passwordSalt = salt;
+  u.passwordHash = simpleHash(salt + initialPassword);
+});
 let cases = []
 let logs = []
 let trainingMaterials = [
@@ -85,6 +99,16 @@ let trainingSubmissions = []
 let trainingCompletions = []
 app.get('/api/health', (req, res) => res.json({ ok: true }))
 app.get('/api/users', (req, res) => res.json(users))
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const u = users.find(x => x.username === username);
+  if (!u) return res.status(401).json({ ok: false });
+  const salt = u.passwordSalt || `nicms:${u.username}`;
+  const candidate = simpleHash(salt + String(password || ''));
+  if (candidate !== u.passwordHash) return res.status(401).json({ ok: false });
+  const { passwordHash, passwordSalt, ...safe } = u;
+  res.json({ ok: true, user: safe });
+})
 app.post('/api/users/bulk', (req, res) => {
   const arr = Array.isArray(req.body) ? req.body : []
   arr.forEach(u => {
@@ -162,4 +186,6 @@ app.post('/api/sync', (req, res) => {
   }
   res.json({ ok: true })
 })
-app.listen(3000, () => {})
+const PORT = process.env.PORT || 3000
+const HOST = process.env.HOST || '0.0.0.0'
+app.listen(PORT, HOST, () => {})
