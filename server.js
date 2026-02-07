@@ -5,6 +5,11 @@ const mongoose = require('mongoose');
 const app = express()
 app.use(cors())
 app.use(express.json())
+const path = require('path')
+app.use(express.static(path.join(__dirname)))
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 const mongoURI = process.env.MONGODB_URI;
 
 mongoose.connect(mongoURI)
