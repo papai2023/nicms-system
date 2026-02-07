@@ -74,21 +74,23 @@ async function apiFetch(path, options = {}, retries = 3, backoffMs = 200) {
         throw e;
     }
 }
-// --- State Management (LocalStorage Wrapper) ---
+// --- ---
 const DB = {
-    init: () => {
-        if (!localStorage.getItem('nicms_cases')) localStorage.setItem('nicms_cases', JSON.stringify([]));
-        if (!localStorage.getItem('nicms_logs')) localStorage.setItem('nicms_logs', JSON.stringify([]));
-        const existingStr = localStorage.getItem('nicms_users');
-        if (!existingStr) {
-            const initialized = USERS.map(u => {
-                const salt = `nicms:${u.username}`;
-                const initialPassword = u.username;
-                const passwordHash = simpleHash(salt + initialPassword);
-                return { ...u, passwordSalt: salt, passwordHash, nameLocked: false };
-            });
-            localStorage.setItem('nicms_users', JSON.stringify(initialized));
-        } else {
+    // Fetches shared materials from MongoDB
+    getMaterials: async () => {
+        return await apiFetch('/api/training/materials') || [];
+    },
+    // Fetches shared logs from MongoDB
+    getLogs: async () => {
+        return await apiFetch('/api/logs') || [];
+    },
+    // Sends Maxwell's upload to the shared cloud
+    saveMaterial: async (material) => {
+        return await apiFetch('/api/training/materials', {
+            method: 'POST',
+            body: JSON.stringify(material)
+        });
+    }
             try {
                 const existing = JSON.parse(existingStr);
                 const usernames = new Set(existing.map(u => u.username));
@@ -149,20 +151,19 @@ const DB = {
                 if (filtered.length !== submissions.length) {
                     localStorage.setItem('nicms_training_submissions', JSON.stringify(filtered));
                 }
-            }
-        } catch (_) {}
-        try {
-            fetch(API_BASE + '/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    users: JSON.parse(localStorage.getItem('nicms_users') || '[]'),
-                    cases: JSON.parse(localStorage.getItem('nicms_cases') || '[]'),
-                    logs: JSON.parse(localStorage.getItem('nicms_logs') || '[]')
-                })
-            });
-        } catch (_) {}
-    },
+           // Automatically load shared data when any officer logs in
+async function initializeSharedData() {
+    try {
+        const materials = await DB.getMaterials();
+        const logs = await DB.getLogs();
+        console.log("Shared data synchronized from MongoDB Atlas");
+        // Trigger your render functions here if needed
+    } catch (err) {
+        console.error("Sync failed:", err);
+    }
+}
+initializeSharedData();
+        catch (_) {}
     getUsers: () => JSON.parse(localStorage.getItem('nicms_users')),
     saveUsers: (users) => {
         localStorage.setItem('nicms_users', JSON.stringify(users));
@@ -249,32 +250,38 @@ const DB = {
             return JSON.parse(localStorage.getItem('nicms_training_materials') || '[]');
         }
     },
-    saveTrainingMaterial: async (m) => {
-        try {
-            await apiFetch('/training/materials', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) });
-        } catch (_) {}
-        const mats = JSON.parse(localStorage.getItem('nicms_training_materials') || '[]');
-        const i = mats.findIndex(x => x.id === m.id);
-        if (i >= 0) mats[i] = m; else mats.unshift(m);
-        localStorage.setItem('nicms_training_materials', JSON.stringify(mats));
-    },
-    fetchTrainingSubmissions: async () => {
-        try {
-            const data = await apiFetch('/training/submissions');
-            localStorage.setItem('nicms_training_submissions', JSON.stringify(data));
-            return data;
-        } catch (_) {
-            return JSON.parse(localStorage.getItem('nicms_training_submissions') || '[]');
+   // --- NEW SHARED CLOUD LOGIC ---
+
+// Helper to turn physical files into text for MongoDB
+const toBase64 = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+});
+
+// New version that saves to the Cloud instead of LocalStorage
+const saveTrainingMaterial = async (m) => {
+    try {
+        const fileInput = document.querySelector('input[type="file"]');
+        const file = fileInput ? fileInput.files[0] : null;
+        
+        // Convert file to string so it can be saved in MongoDB
+        if (file) {
+            m.content = await toBase64(file); 
         }
-    },
-    saveTrainingSubmission: async (s) => {
-        try {
-            await apiFetch('/training/submissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) });
-        } catch (_) {}
-        const subs = JSON.parse(localStorage.getItem('nicms_training_submissions') || '[]');
-        subs.unshift(s);
-        localStorage.setItem('nicms_training_submissions', JSON.stringify(subs));
-    },
+
+        await apiFetch('/api/training/materials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(m)
+        });
+        
+        console.log("Material shared successfully to MongoDB Atlas");
+    } catch (_) {
+        console.error("Failed to share material globally.");
+    }
+};
     fetchTrainingCompletions: async () => {
         try {
             const data = await apiFetch('/training/completions');
