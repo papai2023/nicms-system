@@ -244,16 +244,16 @@ const DB = {
         } catch (_) {
             return JSON.parse(localStorage.getItem('nicms_training_materials') || '[]');
         }
-    },
-   // --- NEW SHARED CLOUD LOGIC ---
+    }; // This comma and brace close the fetchTrainingMaterials function
 
-// Helper to turn physical files into text for MongoDB
+    // Line 250: NEW SHARED CLOUD LOGIC
+// Line 253: Helper to turn physical files into text for MongoDB
 const toBase64 = file => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => resolve(reader.result);
     reader.onerror = error => reject(error);
-});
+}); // Added the semicolon here to close the constant properly
 // New version that saves to the Cloud instead of LocalStorage
 const saveTrainingMaterial = async (m) => {
     try {
