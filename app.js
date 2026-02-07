@@ -91,7 +91,7 @@ const DB = {
             body: JSON.stringify(material)
         });
     }
-}; // This closes the DB object correctly
+}; // Closes the DB object
 
 (async function syncData() {
     try {
@@ -100,11 +100,11 @@ const DB = {
         const usernames = new Set(existing.map(u => u.username));
         
         const additions = USERS.filter(u => !usernames.has(u.username)).map(u => {
-            const salt = nicms:${u.username};
+            const salt = 'nicms:${u.username}';
             const initialPassword = u.username;
             const passwordHash = simpleHash(salt + initialPassword);
             return { ...u, passwordSalt: salt, passwordHash, nameLocked: false };
-        }); // Correctly closes the filter and map chain
+        }); // Properly closes the filter and map chain
                 // Apply policy updates: restrict referral action, enable extended referral view
                 const targetUsernames = new Set(['pascalia', 'maxwel', 'simon']);
                 merged = merged.map(u => {
